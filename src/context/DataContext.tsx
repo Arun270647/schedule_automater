@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
-// ... (keep all the interface definitions as they are) ...
+// ... (Interfaces remain the same) ...
 export interface Class {
   id: string;
   name: string;
@@ -72,161 +72,86 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [periods, setPeriods] = useState<Period[]>([]);
   const [timetable, setTimetableState] = useState<TimetableSlot[]>([]);
 
-  // This useEffect fetches initial data and listens for REALTIME changes from OTHER users.
   useEffect(() => {
+    // --- 1. FETCH ALL INITIAL DATA ---
     const fetchData = async () => {
-      const { data } = await supabase.from('classes').select('*');
-      setClasses(data || []);
+      const { data: classesData } = await supabase.from('classes').select('*');
+      setClasses(classesData || []);
+
+      const { data: subjectsData } = await supabase.from('subjects').select('*');
+      setSubjects(subjectsData || []);
+
+      const { data: facultyData } = await supabase.from('faculty').select('*');
+      setFaculty(facultyData || []);
+      
+      const { data: periodsData } = await supabase.from('periods').select('*');
+      setPeriods(periodsData?.map(p => ({ ...p, startTime: p.start_time, endTime: p.end_time })).sort((a, b) => a.order - b.order) || []);
     };
     fetchData();
 
-    const channel = supabase.channel('public:classes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'classes' }, (payload) => {
-        if (payload.eventType === 'DELETE') {
-          setClasses(prev => prev.filter(cls => cls.id !== (payload.old as Class).id));
-        } else {
-          // For INSERT and UPDATE, we can just refetch to ensure consistency
-          fetchData();
-        }
-      }).subscribe();
+    // --- 2. SET UP ALL REALTIME SUBSCRIPTIONS ---
+    const channels: RealtimeChannel[] = [];
+
+    const classChannel = supabase.channel('public:classes').on('postgres_changes', { event: '*', schema: 'public', table: 'classes' }, () => fetchData()).subscribe();
+    const subjectChannel = supabase.channel('public:subjects').on('postgres_changes', { event: '*', schema: 'public', table: 'subjects' }, () => fetchData()).subscribe();
+    const facultyChannel = supabase.channel('public:faculty').on('postgres_changes', { event: '*', schema: 'public', table: 'faculty' }, () => fetchData()).subscribe();
+    const periodChannel = supabase.channel('public:periods').on('postgres_changes', { event: '*', schema: 'public', table: 'periods' }, () => fetchData()).subscribe();
+
+    channels.push(classChannel, subjectChannel, facultyChannel, periodChannel);
 
     return () => {
-      supabase.removeChannel(channel);
+      channels.forEach(channel => supabase.removeChannel(channel));
     };
   }, []);
-  
-  // ... similar useEffects for subjects, faculty, and periods would go here ...
 
-
-  // --- MODIFIED FUNCTIONS ---
-  // The add functions now update the state directly for instant UI feedback.
-
+  // --- CRUD Functions (no changes needed here) ---
   const addClass = async (classData: Omit<Class, 'id'>) => {
-    const { data, error } = await supabase.from('classes').insert([classData]).select();
-    if (error) {
-      console.error("Error adding class:", error);
-    } else if (data) {
-      setClasses(prev => [...prev, ...data]);
-    }
+    await supabase.from('classes').insert([classData]);
+  };
+  const updateClass = async (id: string, classData: Partial<Class>) => {
+    await supabase.from('classes').update(classData).eq('id', id);
+  };
+  const deleteClass = async (id: string) => {
+    await supabase.from('classes').delete().eq('id', id);
   };
 
   const addSubject = async (subjectData: Omit<Subject, 'id'>) => {
-    const { data, error } = await supabase.from('subjects').insert([subjectData]).select();
-    if (error) {
-        console.error("Error adding subject:", error);
-    } else if (data) {
-        setSubjects(prev => [...prev, ...data]);
-    }
+    await supabase.from('subjects').insert([subjectData]);
   };
-
-  const addFaculty = async (facultyData: Omit<Faculty, 'id'>) => {
-    const { data, error } = await supabase.from('faculty').insert([facultyData]).select();
-    if (error) {
-        console.error("Error adding faculty:", error);
-    } else if (data) {
-        setFaculty(prev => [...prev, ...data]);
-    }
-  };
-
-  const addPeriod = async (periodData: Omit<Period, 'id'>) => {
-    const { data, error } = await supabase.from('periods').insert([{ ...periodData, start_time: periodData.startTime, end_time: periodData.endTime }]).select();
-    if (error) {
-        console.error("Error adding period:", error);
-    } else if (data) {
-        setPeriods(prev => [...prev, ...data.map(p => ({...p, startTime: p.start_time, endTime: p.end_time}))].sort((a,b) => a.order - b.order));
-    }
-  };
-  
-  // --- UNMODIFIED FUNCTIONS ---
-
-  const updateClass = async (id: string, classData: Partial<Class>) => {
-    const { data, error } = await supabase.from('classes').update(classData).eq('id', id).select();
-    if (!error && data) {
-        setClasses(prev => prev.map(cls => cls.id === id ? data[0] : cls));
-    }
-  };
-
-  const deleteClass = async (id: string) => {
-    await supabase.from('classes').delete().eq('id', id);
-    setClasses(prev => prev.filter(cls => cls.id !== id));
-  };
-
   const updateSubject = async (id: string, subjectData: Partial<Subject>) => {
-    const { data, error } = await supabase.from('subjects').update(subjectData).eq('id', id).select();
-    if (!error && data) {
-        setSubjects(prev => prev.map(subject => subject.id === id ? data[0] : subject));
-    }
+    await supabase.from('subjects').update(subjectData).eq('id', id);
   };
-
   const deleteSubject = async (id: string) => {
     await supabase.from('subjects').delete().eq('id', id);
-    setSubjects(prev => prev.filter(subject => subject.id !== id));
   };
-
+  
+  const addFaculty = async (facultyData: Omit<Faculty, 'id'>) => {
+    await supabase.from('faculty').insert([facultyData]);
+  };
   const updateFaculty = async (id: string, facultyData: Partial<Faculty>) => {
-    const { data, error } = await supabase.from('faculty').update(facultyData).eq('id', id).select();
-    if (!error && data) {
-        setFaculty(prev => prev.map(f => f.id === id ? data[0] : f));
-    }
+    await supabase.from('faculty').update(facultyData).eq('id', id);
   };
-
   const deleteFaculty = async (id: string) => {
     await supabase.from('faculty').delete().eq('id', id);
-    setFaculty(prev => prev.filter(f => f.id !== id));
   };
-
+  
+  const addPeriod = async (periodData: Omit<Period, 'id'>) => {
+    await supabase.from('periods').insert([{ ...periodData, start_time: periodData.startTime, end_time: periodData.endTime }]);
+  };
   const updatePeriod = async (id: string, periodData: Partial<Period>) => {
-    const { data, error } = await supabase.from('periods').update({ ...periodData, start_time: periodData.startTime, end_time: periodData.endTime }).eq('id', id).select();
-    if (!error && data) {
-        setPeriods(prev => prev.map(period => period.id === id ? {...data[0], startTime: data[0].start_time, endTime: data[0].end_time} : period).sort((a, b) => a.order - b.order));
-    }
+    await supabase.from('periods').update({ ...periodData, start_time: periodData.startTime, end_time: periodData.endTime }).eq('id', id);
   };
-
   const deletePeriod = async (id: string) => {
     await supabase.from('periods').delete().eq('id', id);
-    setPeriods(prev => prev.filter(period => period.id !== id));
   };
+  
+  const setTimetable = (newTimetable: TimetableSlot[]) => setTimetableState(newTimetable);
+  const updateTimetableSlot = (id: string, slotData: Partial<TimetableSlot>) => setTimetableState(prev => prev.map(slot => (slot.id === id ? { ...slot, ...slotData } : slot)));
+  const deleteTimetableSlot = (id: string) => setTimetableState(prev => prev.filter(slot => slot.id !== id));
 
-  const setTimetable = (newTimetable: TimetableSlot[]) => {
-    setTimetableState(newTimetable);
-  };
+  const value = { classes, subjects, faculty, periods, timetable, addClass, updateClass, deleteClass, addSubject, updateSubject, deleteSubject, addFaculty, updateFaculty, deleteFaculty, addPeriod, updatePeriod, deletePeriod, setTimetable, updateTimetableSlot, deleteTimetableSlot };
 
-  const updateTimetableSlot = (id: string, slotData: Partial<TimetableSlot>) => {
-    setTimetableState(prev => prev.map(slot => slot.id === id ? { ...slot, ...slotData } : slot));
-  };
-
-  const deleteTimetableSlot = (id: string) => {
-    setTimetableState(prev => prev.filter(slot => slot.id !== id));
-  };
-
-  const value: DataContextType = {
-    classes,
-    subjects,
-    faculty,
-    periods,
-    timetable,
-    addClass,
-    updateClass,
-    deleteClass,
-    addSubject,
-    updateSubject,
-    deleteSubject,
-    addFaculty,
-    updateFaculty,
-    deleteFaculty,
-    addPeriod,
-    updatePeriod,
-    deletePeriod,
-    setTimetable,
-    updateTimetableSlot,
-    deleteTimetableSlot,
-  };
-
-  return (
-    <DataContext.Provider value={value}>
-      {children}
-    </DataContext.Provider>
-  );
+  return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }
 
 export function useData() {
