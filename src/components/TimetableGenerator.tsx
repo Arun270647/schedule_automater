@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, Play, RotateCcw, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Play, RotateCcw, AlertTriangle, CheckCircle } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import type { TimetableSlot } from '../context/DataContext';
 
@@ -24,8 +24,6 @@ export default function TimetableGenerator() {
   };
 
   const generateTimetable = async () => {
-    console.clear();
-    console.log("--- Starting Timetable Generation ---");
     setIsGenerating(true);
     setGenerationStatus('generating');
     setErrorMessage('');
@@ -37,55 +35,35 @@ export default function TimetableGenerator() {
       if (errors.length > 0) throw new Error(errors.join('\n'));
 
       const newTimetable: TimetableSlot[] = [];
-      const occupiedFacultySlots = new Set<string>();
-      const dailyClassSubjects = new Map<string, Set<string>>();
-
-      console.log(`Data: ${classes.length} classes, ${periods.length} periods, ${faculty.length} faculty.`);
+      // This Set tracks which faculty is busy in a specific time slot (day + period)
+      const occupiedFacultySlots = new Set<string>(); // "day-periodId" -> Set of facultyIds
 
       for (const day of weekDays) {
         for (const period of periods) {
+          const periodOccupiedFaculty = new Set<string>();
+
           for (const cls of classes) {
-            const dailyClassKey = `${cls.id}-${day}`;
-            if (!dailyClassSubjects.has(dailyClassKey)) {
-              dailyClassSubjects.set(dailyClassKey, new Set());
-            }
+            // Find faculty who are not busy during this specific period
+            const availableFaculty = faculty
+              .filter(f => f.subjects && f.subjects.length > 0 && !periodOccupiedFaculty.has(f.id))
+              .sort(() => 0.5 - Math.random()); // Shuffle for randomness
 
-            const availableFaculty = faculty.filter(f => 
-              f.subjects && f.subjects.length > 0 && !occupiedFacultySlots.has(`${f.id}-${day}-${period.id}`)
-            );
-            
-            if (availableFaculty.length === 0) {
-              console.warn(`No faculty available for ${cls.name} on ${day} at ${period.name}`);
-              continue;
-            }
+            if (availableFaculty.length > 0) {
+              const assignedFaculty = availableFaculty[0];
+              const assignedSubject = assignedFaculty.subjects[Math.floor(Math.random() * assignedFaculty.subjects.length)];
 
-            let assignmentMade = false;
-            for (const fac of availableFaculty.sort(() => 0.5 - Math.random())) {
-              const subjectsTaughtToday = dailyClassSubjects.get(dailyClassKey)!;
-              const potentialSubjects = fac.subjects.filter(subId => !subjectsTaughtToday.has(subId));
+              const slot: TimetableSlot = {
+                id: `${day}-${period.id}-${cls.id}`,
+                day,
+                periodId: period.id,
+                classId: cls.id,
+                subjectId: assignedSubject,
+                facultyId: assignedFaculty.id,
+              };
 
-              if (potentialSubjects.length > 0) {
-                const subjectIdToAssign = potentialSubjects[0];
-                
-                const slot: TimetableSlot = {
-                  id: `${day}-${period.id}-${cls.id}`,
-                  day,
-                  periodId: period.id,
-                  classId: cls.id,
-                  subjectId: subjectIdToAssign,
-                  facultyId: fac.id,
-                };
-
-                newTimetable.push(slot);
-                occupiedFacultySlots.add(`${fac.id}-${day}-${period.id}`);
-                subjectsTaughtToday.add(subjectIdToAssign);
-                console.log(`SUCCESS: Assigned ${subjects.find(s=>s.id === subjectIdToAssign)?.name} to ${cls.name} with ${fac.name} on ${day} at ${period.name}`);
-                assignmentMade = true;
-                break;
-              }
-            }
-            if (!assignmentMade) {
-                console.warn(`Could not find a suitable new subject for ${cls.name} on ${day} at ${period.name}`);
+              newTimetable.push(slot);
+              // Mark this faculty as busy for this period
+              periodOccupiedFaculty.add(assignedFaculty.id);
             }
           }
         }
@@ -94,12 +72,10 @@ export default function TimetableGenerator() {
       await new Promise(resolve => setTimeout(resolve, 1000));
       setTimetable(newTimetable);
       setGenerationStatus('success');
-      console.log("--- Timetable Generation Complete ---");
 
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'An unknown error occurred.');
       setGenerationStatus('error');
-      console.error("--- Timetable Generation Failed ---", error);
     } finally {
       setIsGenerating(false);
     }
@@ -116,7 +92,8 @@ export default function TimetableGenerator() {
 
   return (
     <div className="space-y-6">
-      <div>
+       {/* The JSX for this component remains the same as the previous version */}
+       <div>
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Timetable Generator</h2>
         <p className="text-gray-600 dark:text-gray-400">Generate a new timetable based on the existing data.</p>
       </div>
