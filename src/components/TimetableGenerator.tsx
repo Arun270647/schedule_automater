@@ -35,17 +35,17 @@ export default function TimetableGenerator() {
       if (errors.length > 0) throw new Error(errors.join('\n'));
 
       const newTimetable: TimetableSlot[] = [];
-      // This Set tracks which faculty is busy in a specific time slot (day + period)
-      const occupiedFacultySlots = new Set<string>(); // "day-periodId" -> Set of facultyIds
+      // This Set now tracks occupied slots for the entire week.
+      // The key is a combination of faculty, day, and period.
+      const occupiedSlots = new Set<string>(); 
 
       for (const day of weekDays) {
         for (const period of periods) {
-          const periodOccupiedFaculty = new Set<string>();
-
           for (const cls of classes) {
-            // Find faculty who are not busy during this specific period
+            
+            // Find faculty who are not busy during this specific day and period
             const availableFaculty = faculty
-              .filter(f => f.subjects && f.subjects.length > 0 && !periodOccupiedFaculty.has(f.id))
+              .filter(f => f.subjects && f.subjects.length > 0 && !occupiedSlots.has(`${f.id}-${day}-${period.id}`))
               .sort(() => 0.5 - Math.random()); // Shuffle for randomness
 
             if (availableFaculty.length > 0) {
@@ -62,8 +62,8 @@ export default function TimetableGenerator() {
               };
 
               newTimetable.push(slot);
-              // Mark this faculty as busy for this period
-              periodOccupiedFaculty.add(assignedFaculty.id);
+              // Mark this faculty as busy for this specific time slot
+              occupiedSlots.add(`${assignedFaculty.id}-${day}-${period.id}`);
             }
           }
         }
@@ -92,7 +92,7 @@ export default function TimetableGenerator() {
 
   return (
     <div className="space-y-6">
-       {/* The JSX for this component remains the same as the previous version */}
+       {/* The JSX for this component remains the same */}
        <div>
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Timetable Generator</h2>
         <p className="text-gray-600 dark:text-gray-400">Generate a new timetable based on the existing data.</p>
