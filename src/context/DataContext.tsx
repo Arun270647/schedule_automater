@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { supabase } from '../supabaseClient';
 
 export interface Class {
   id: string;
@@ -69,119 +70,100 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [periods, setPeriods] = useState<Period[]>([]);
   const [timetable, setTimetableState] = useState<TimetableSlot[]>([]);
 
-  // Load data from localStorage on component mount
   useEffect(() => {
-    const savedClasses = localStorage.getItem('timetable_classes');
-    const savedSubjects = localStorage.getItem('timetable_subjects');
-    const savedFaculty = localStorage.getItem('timetable_faculty');
-    const savedPeriods = localStorage.getItem('timetable_periods');
-    const savedTimetable = localStorage.getItem('timetable_schedule');
+    // Fetch initial data from Supabase
+    const fetchData = async () => {
+      const { data: classesData } = await supabase.from('classes').select('*');
+      if (classesData) setClasses(classesData);
 
-    if (savedClasses) setClasses(JSON.parse(savedClasses));
-    if (savedSubjects) setSubjects(JSON.parse(savedSubjects));
-    if (savedFaculty) setFaculty(JSON.parse(savedFaculty));
-    if (savedPeriods) setPeriods(JSON.parse(savedPeriods));
-    if (savedTimetable) setTimetableState(JSON.parse(savedTimetable));
+      const { data: subjectsData } = await supabase.from('subjects').select('*');
+      if (subjectsData) setSubjects(subjectsData);
 
-    // Initialize default periods if none exist
-    if (!savedPeriods) {
-      const defaultPeriods: Period[] = [
-        { id: '1', name: 'Period 1', startTime: '09:00', endTime: '10:00', order: 1 },
-        { id: '2', name: 'Period 2', startTime: '10:00', endTime: '11:00', order: 2 },
-        { id: '3', name: 'Period 3', startTime: '11:15', endTime: '12:15', order: 3 },
-        { id: '4', name: 'Period 4', startTime: '12:15', endTime: '13:15', order: 4 },
-        { id: '5', name: 'Period 5', startTime: '14:00', endTime: '15:00', order: 5 },
-        { id: '6', name: 'Period 6', startTime: '15:00', endTime: '16:00', order: 6 },
-      ];
-      setPeriods(defaultPeriods);
-      localStorage.setItem('timetable_periods', JSON.stringify(defaultPeriods));
-    }
+      const { data: facultyData } = await supabase.from('faculty').select('*');
+      if (facultyData) setFaculty(facultyData);
+
+      const { data: periodsData } = await supabase.from('periods').select('*');
+      if (periodsData) {
+        setPeriods(periodsData.map(p => ({ ...p, startTime: p.start_time, endTime: p.end_time })));
+      } else {
+        // Initialize default periods if none exist
+        const defaultPeriods: Omit<Period, 'id'>[] = [
+            { name: 'Period 1', startTime: '09:00', endTime: '10:00', order: 1 },
+            { name: 'Period 2', startTime: '10:00', endTime: '11:00', order: 2 },
+            { name: 'Period 3', startTime: '11:15', endTime: '12:15', order: 3 },
+            { name: 'Period 4', startTime: '12:15', endTime: '13:15', order: 4 },
+            { name: 'Period 5', startTime: '14:00', endTime: '15:00', order: 5 },
+            { name: 'Period 6', startTime: '15:00', endTime: '16:00', order: 6 },
+        ];
+        const { data: newPeriods } = await supabase.from('periods').insert(defaultPeriods.map(p => ({...p, start_time: p.startTime, end_time: p.endTime}))).select();
+        if (newPeriods) setPeriods(newPeriods.map(p => ({ ...p, startTime: p.start_time, endTime: p.end_time })));
+      }
+    };
+    fetchData();
   }, []);
 
-  // Save to localStorage whenever data changes
-  useEffect(() => {
-    localStorage.setItem('timetable_classes', JSON.stringify(classes));
-  }, [classes]);
-
-  useEffect(() => {
-    localStorage.setItem('timetable_subjects', JSON.stringify(subjects));
-  }, [subjects]);
-
-  useEffect(() => {
-    localStorage.setItem('timetable_faculty', JSON.stringify(faculty));
-  }, [faculty]);
-
-  useEffect(() => {
-    localStorage.setItem('timetable_periods', JSON.stringify(periods));
-  }, [periods]);
-
-  useEffect(() => {
-    localStorage.setItem('timetable_schedule', JSON.stringify(timetable));
-  }, [timetable]);
-
   // Class management
-  const addClass = (classData: Omit<Class, 'id'>) => {
-    const newClass: Class = { ...classData, id: Date.now().toString() };
-    setClasses(prev => [...prev, newClass]);
+  const addClass = async (classData: Omit<Class, 'id'>) => {
+    const { data } = await supabase.from('classes').insert([classData]).select();
+    if (data) setClasses(prev => [...prev, ...data]);
   };
 
-  const updateClass = (id: string, classData: Partial<Class>) => {
-    setClasses(prev => prev.map(cls => cls.id === id ? { ...cls, ...classData } : cls));
+  const updateClass = async (id: string, classData: Partial<Class>) => {
+    const { data } = await supabase.from('classes').update(classData).eq('id', id).select();
+    if (data) setClasses(prev => prev.map(cls => cls.id === id ? data[0] : cls));
   };
 
-  const deleteClass = (id: string) => {
+  const deleteClass = async (id: string) => {
+    await supabase.from('classes').delete().eq('id', id);
     setClasses(prev => prev.filter(cls => cls.id !== id));
-    // Also remove from timetable
-    setTimetableState(prev => prev.filter(slot => slot.classId !== id));
   };
 
   // Subject management
-  const addSubject = (subjectData: Omit<Subject, 'id'>) => {
-    const newSubject: Subject = { ...subjectData, id: Date.now().toString() };
-    setSubjects(prev => [...prev, newSubject]);
+  const addSubject = async (subjectData: Omit<Subject, 'id'>) => {
+    const { data } = await supabase.from('subjects').insert([subjectData]).select();
+    if (data) setSubjects(prev => [...prev, ...data]);
   };
 
-  const updateSubject = (id: string, subjectData: Partial<Subject>) => {
-    setSubjects(prev => prev.map(subject => subject.id === id ? { ...subject, ...subjectData } : subject));
+  const updateSubject = async (id: string, subjectData: Partial<Subject>) => {
+    const { data } = await supabase.from('subjects').update(subjectData).eq('id', id).select();
+    if (data) setSubjects(prev => prev.map(subject => subject.id === id ? data[0] : subject));
   };
 
-  const deleteSubject = (id: string) => {
+  const deleteSubject = async (id: string) => {
+    await supabase.from('subjects').delete().eq('id', id);
     setSubjects(prev => prev.filter(subject => subject.id !== id));
-    // Also remove from faculty assignments and timetable
-    setFaculty(prev => prev.map(f => ({ ...f, subjects: f.subjects.filter(s => s !== id) })));
-    setTimetableState(prev => prev.filter(slot => slot.subjectId !== id));
   };
 
   // Faculty management
-  const addFaculty = (facultyData: Omit<Faculty, 'id'>) => {
-    const newFaculty: Faculty = { ...facultyData, id: Date.now().toString() };
-    setFaculty(prev => [...prev, newFaculty]);
+  const addFaculty = async (facultyData: Omit<Faculty, 'id'>) => {
+    const { data } = await supabase.from('faculty').insert([facultyData]).select();
+    if (data) setFaculty(prev => [...prev, ...data]);
   };
 
-  const updateFaculty = (id: string, facultyData: Partial<Faculty>) => {
-    setFaculty(prev => prev.map(f => f.id === id ? { ...f, ...facultyData } : f));
+  const updateFaculty = async (id: string, facultyData: Partial<Faculty>) => {
+    const { data } = await supabase.from('faculty').update(facultyData).eq('id', id).select();
+    if (data) setFaculty(prev => prev.map(f => f.id === id ? data[0] : f));
   };
 
-  const deleteFaculty = (id: string) => {
+  const deleteFaculty = async (id: string) => {
+    await supabase.from('faculty').delete().eq('id', id);
     setFaculty(prev => prev.filter(f => f.id !== id));
-    // Also remove from timetable
-    setTimetableState(prev => prev.filter(slot => slot.facultyId !== id));
   };
 
   // Period management
-  const addPeriod = (periodData: Omit<Period, 'id'>) => {
-    const newPeriod: Period = { ...periodData, id: Date.now().toString() };
-    setPeriods(prev => [...prev, newPeriod].sort((a, b) => a.order - b.order));
+  const addPeriod = async (periodData: Omit<Period, 'id'>) => {
+    const { data } = await supabase.from('periods').insert([{ ...periodData, start_time: periodData.startTime, end_time: periodData.endTime }]).select();
+    if (data) setPeriods(prev => [...prev, ...data.map(p => ({...p, startTime: p.start_time, endTime: p.end_time}))].sort((a,b) => a.order - b.order));
   };
 
-  const updatePeriod = (id: string, periodData: Partial<Period>) => {
-    setPeriods(prev => prev.map(period => period.id === id ? { ...period, ...periodData } : period).sort((a, b) => a.order - b.order));
+  const updatePeriod = async (id: string, periodData: Partial<Period>) => {
+    const { data } = await supabase.from('periods').update({ ...periodData, start_time: periodData.startTime, end_time: periodData.endTime }).eq('id', id).select();
+    if (data) setPeriods(prev => prev.map(period => period.id === id ? {...data[0], startTime: data[0].start_time, endTime: data[0].end_time} : period).sort((a, b) => a.order - b.order));
   };
 
-  const deletePeriod = (id: string) => {
+  const deletePeriod = async (id: string) => {
+    await supabase.from('periods').delete().eq('id', id);
     setPeriods(prev => prev.filter(period => period.id !== id));
-    // Also remove from timetable
-    setTimetableState(prev => prev.filter(slot => slot.periodId !== id));
   };
 
   // Timetable management
