@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Plus, Edit2, Trash2, User, Search, Mail, BookOpen, X } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plus, Edit2, Trash2, User, Search, Mail, BookOpen } from 'lucide-react';
 import { useData } from '../context/DataContext';
 
 export default function FacultyManagement() {
@@ -12,6 +12,20 @@ export default function FacultyManagement() {
     email: '',
     subjects: [] as string[],
   });
+
+  // Effect to populate form when editingFaculty changes
+  useEffect(() => {
+    if (editingFaculty) {
+      const facultyToEdit = faculty.find(f => f.id === editingFaculty);
+      if (facultyToEdit) {
+        setFormData({
+          name: facultyToEdit.name,
+          email: facultyToEdit.email,
+          subjects: facultyToEdit.subjects || [], // Ensure subjects is always an array
+        });
+      }
+    }
+  }, [editingFaculty, faculty]);
 
   const filteredFaculty = faculty.filter(f =>
     f.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -26,17 +40,19 @@ export default function FacultyManagement() {
     } else {
       addFaculty(formData);
     }
-    setFormData({ name: '', email: '', subjects: [] });
-    setShowForm(false);
+    resetForm();
   };
-
+  
   const handleEdit = (f: any) => {
-    setFormData({ name: f.name, email: f.email, subjects: f.subjects });
     setEditingFaculty(f.id);
     setShowForm(true);
   };
 
   const handleCancel = () => {
+    resetForm();
+  };
+
+  const resetForm = () => {
     setFormData({ name: '', email: '', subjects: [] });
     setEditingFaculty(null);
     setShowForm(false);
@@ -66,7 +82,10 @@ export default function FacultyManagement() {
           </p>
         </div>
         <button
-          onClick={() => setShowForm(true)}
+          onClick={() => {
+            resetForm(); // Ensure form is clear before showing
+            setShowForm(true);
+          }}
           className="inline-flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
         >
           <Plus className="h-4 w-4 mr-2" />
@@ -93,6 +112,7 @@ export default function FacultyManagement() {
             {editingFaculty ? 'Edit Faculty' : 'Add New Faculty'}
           </h3>
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* ... (Form inputs for name and email remain the same) ... */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -131,7 +151,7 @@ export default function FacultyManagement() {
                   No subjects available. Please add subjects first.
                 </p>
               ) : (
-                <div className="space-y-2 max-h-40 overflow-y-auto">
+                <div className="space-y-2 max-h-40 overflow-y-auto p-2 border border-gray-200 dark:border-gray-600 rounded-lg">
                   {subjects.map(subject => (
                     <label
                       key={subject.id}
@@ -143,14 +163,7 @@ export default function FacultyManagement() {
                         onChange={() => toggleSubject(subject.id)}
                         className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
                       />
-                      <div className="flex-1">
-                        <span className="font-medium text-gray-900 dark:text-white">
-                          {subject.name}
-                        </span>
-                        <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">
-                          ({subject.code})
-                        </span>
-                      </div>
+                      <span className="font-medium text-gray-900 dark:text-white">{subject.name} ({subject.code})</span>
                     </label>
                   ))}
                 </div>
@@ -178,6 +191,7 @@ export default function FacultyManagement() {
 
       {/* Faculty List */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* ... (The display logic for the list remains the same) ... */}
         {filteredFaculty.length === 0 ? (
           <div className="col-span-full text-center py-12">
             <User className="h-16 w-16 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
@@ -250,10 +264,10 @@ export default function FacultyManagement() {
                   <div className="flex items-center space-x-2 mb-2">
                     <BookOpen className="h-4 w-4 text-gray-400" />
                     <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Assigned Subjects ({f.subjects.length})
+                      Assigned Subjects ({f.subjects ? f.subjects.length : 0})
                     </span>
                   </div>
-                  {f.subjects.length === 0 ? (
+                  {(!f.subjects || f.subjects.length === 0) ? (
                     <p className="text-sm text-gray-500 dark:text-gray-400 italic">
                       No subjects assigned
                     </p>
