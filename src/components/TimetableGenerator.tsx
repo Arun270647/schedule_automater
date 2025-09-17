@@ -1,7 +1,7 @@
-import React, 'useState } from 'react';
+import React, { useState } from 'react';
 import { Settings, Play, RotateCcw, AlertTriangle, CheckCircle } from 'lucide-react';
 import { useData } from '../context/DataContext';
-import type { TimetableSlot, Faculty } from '../context/DataContext';
+import type { TimetableSlot } from '../context/DataContext';
 
 export default function TimetableGenerator() {
   const { classes, subjects, faculty, periods, setTimetable, timetable } = useData();
@@ -24,21 +24,21 @@ export default function TimetableGenerator() {
   };
 
   const generateTimetable = async () => {
-    console.clear(); // Clear console for new generation log
+    console.clear();
     console.log("--- Starting Timetable Generation ---");
     setIsGenerating(true);
     setGenerationStatus('generating');
     setErrorMessage('');
 
     try {
-      await new Promise(resolve => setTimeout(resolve, 50)); // Allow UI to update
+      await new Promise(resolve => setTimeout(resolve, 50));
       
       const errors = validateData();
       if (errors.length > 0) throw new Error(errors.join('\n'));
 
       const newTimetable: TimetableSlot[] = [];
-      const occupiedFacultySlots = new Set<string>(); // "facultyId-day-periodId"
-      const dailyClassSubjects = new Map<string, Set<string>>(); // "classId-day" -> Set of subjectIds
+      const occupiedFacultySlots = new Set<string>();
+      const dailyClassSubjects = new Map<string, Set<string>>();
 
       console.log(`Data: ${classes.length} classes, ${periods.length} periods, ${faculty.length} faculty.`);
 
@@ -50,7 +50,6 @@ export default function TimetableGenerator() {
               dailyClassSubjects.set(dailyClassKey, new Set());
             }
 
-            // Find faculty who are free at this exact time
             const availableFaculty = faculty.filter(f => 
               f.subjects && f.subjects.length > 0 && !occupiedFacultySlots.has(`${f.id}-${day}-${period.id}`)
             );
@@ -60,14 +59,13 @@ export default function TimetableGenerator() {
               continue;
             }
 
-            // Find a faculty member who can teach a subject not yet taught to this class today
             let assignmentMade = false;
-            for (const fac of availableFaculty.sort(() => 0.5 - Math.random())) { // Shuffle faculty
+            for (const fac of availableFaculty.sort(() => 0.5 - Math.random())) {
               const subjectsTaughtToday = dailyClassSubjects.get(dailyClassKey)!;
               const potentialSubjects = fac.subjects.filter(subId => !subjectsTaughtToday.has(subId));
 
               if (potentialSubjects.length > 0) {
-                const subjectIdToAssign = potentialSubjects[0]; // Assign the first available new subject
+                const subjectIdToAssign = potentialSubjects[0];
                 
                 const slot: TimetableSlot = {
                   id: `${day}-${period.id}-${cls.id}`,
@@ -83,7 +81,7 @@ export default function TimetableGenerator() {
                 subjectsTaughtToday.add(subjectIdToAssign);
                 console.log(`SUCCESS: Assigned ${subjects.find(s=>s.id === subjectIdToAssign)?.name} to ${cls.name} with ${fac.name} on ${day} at ${period.name}`);
                 assignmentMade = true;
-                break; // Move to the next class
+                break;
               }
             }
             if (!assignmentMade) {
@@ -93,7 +91,7 @@ export default function TimetableGenerator() {
         }
       }
       
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate thinking
+      await new Promise(resolve => setTimeout(resolve, 1000));
       setTimetable(newTimetable);
       setGenerationStatus('success');
       console.log("--- Timetable Generation Complete ---");
