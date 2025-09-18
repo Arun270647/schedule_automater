@@ -2,7 +2,6 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
-// ... (Interfaces remain the same) ...
 export interface Class {
   id: string;
   name: string;
@@ -29,7 +28,7 @@ export interface Period {
   startTime: string;
   endTime: string;
   order: number;
-  isBreak?: boolean; 
+  isBreak?: boolean; // Correctly defined here
 }
 
 export interface TimetableSlot {
@@ -86,7 +85,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setFaculty(facultyData || []);
       
       const { data: periodsData } = await supabase.from('periods').select('*');
-      setPeriods(periodsData?.map(p => ({ ...p, startTime: p.start_time, endTime: p.end_time })).sort((a, b) => a.order - b.order) || []);
+      // --- MODIFIED LINE ---
+      setPeriods(periodsData?.map(p => ({ ...p, startTime: p.start_time, endTime: p.end_time, isBreak: p.is_break })).sort((a, b) => a.order - b.order) || []);
     };
     fetchData();
 
@@ -146,12 +146,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
   
   const addPeriod = async (periodData: Omit<Period, 'id'>) => {
-    const { data } = await supabase.from('periods').insert([{ ...periodData, start_time: periodData.startTime, end_time: periodData.endTime }]).select();
-    if (data) setPeriods(prev => [...prev, ...data.map(p => ({...p, startTime: p.start_time, endTime: p.end_time}))].sort((a,b) => a.order - b.order));
+    // --- MODIFIED LINE ---
+    const { data } = await supabase.from('periods').insert([{ name: periodData.name, "order": periodData.order, start_time: periodData.startTime, end_time: periodData.endTime, is_break: periodData.isBreak }]).select();
+    if (data) setPeriods(prev => [...prev, ...data.map(p => ({...p, startTime: p.start_time, endTime: p.end_time, isBreak: p.is_break}))].sort((a,b) => a.order - b.order));
   };
   const updatePeriod = async (id: string, periodData: Partial<Period>) => {
-    const { data } = await supabase.from('periods').update({ ...periodData, start_time: periodData.startTime, end_time: periodData.endTime }).eq('id', id).select();
-    if (data) setPeriods(prev => prev.map(item => item.id === id ? {...data[0], startTime: data[0].start_time, endTime: data[0].end_time} : item).sort((a,b) => a.order - b.order));
+    // --- MODIFIED LINE ---
+    const { data } = await supabase.from('periods').update({ name: periodData.name, "order": periodData.order, start_time: periodData.startTime, end_time: periodData.endTime, is_break: periodData.isBreak }).eq('id', id).select();
+    if (data) setPeriods(prev => prev.map(item => item.id === id ? {...data[0], startTime: data[0].start_time, endTime: data[0].end_time, isBreak: data[0].is_break} : item).sort((a,b) => a.order - b.order));
   };
   const deletePeriod = async (id: string) => {
     await supabase.from('periods').delete().eq('id', id);
