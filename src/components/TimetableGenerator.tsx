@@ -35,35 +35,48 @@ export default function TimetableGenerator() {
       if (errors.length > 0) throw new Error(errors.join('\n'));
 
       const newTimetable: TimetableSlot[] = [];
-      // This Set now tracks occupied slots for the entire week.
-      // The key is a combination of faculty, day, and period.
-      const occupiedSlots = new Set<string>(); 
+      const occupiedFacultySlots = new Set<string>(); // Tracks: "facultyId-day-periodId"
+      const dailyClassSubjects = new Map<string, Set<string>>(); // Tracks: "classId-day" -> Set of subjectIds
 
       for (const day of weekDays) {
+        for (const cls of classes) {
+            // Initialize the subject tracker for this class for this day
+            dailyClassSubjects.set(`${cls.id}-${day}`, new Set());
+        }
+
         for (const period of periods) {
           for (const cls of classes) {
-            
-            // Find faculty who are not busy during this specific day and period
+            const dailyClassKey = `${cls.id}-${day}`;
+            const subjectsTaughtToday = dailyClassSubjects.get(dailyClassKey)!;
+
+            // Find faculty who are free at this exact time
             const availableFaculty = faculty
-              .filter(f => f.subjects && f.subjects.length > 0 && !occupiedSlots.has(`${f.id}-${day}-${period.id}`))
-              .sort(() => 0.5 - Math.random()); // Shuffle for randomness
+              .filter(f => f.subjects && f.subjects.length > 0 && !occupiedFacultySlots.has(`${f.id}-${day}-${period.id}`))
+              .sort(() => 0.5 - Math.random());
+            
+            let assignmentMade = false;
+            for (const fac of availableFaculty) {
+              // Find a subject this faculty teaches that has NOT been taught to this class today
+              const potentialSubjects = fac.subjects.filter(subId => !subjectsTaughtToday.has(subId));
 
-            if (availableFaculty.length > 0) {
-              const assignedFaculty = availableFaculty[0];
-              const assignedSubject = assignedFaculty.subjects[Math.floor(Math.random() * assignedFaculty.subjects.length)];
+              if (potentialSubjects.length > 0) {
+                const subjectIdToAssign = potentialSubjects[0];
+                
+                const slot: TimetableSlot = {
+                  id: `${day}-${period.id}-${cls.id}`,
+                  day,
+                  periodId: period.id,
+                  classId: cls.id,
+                  subjectId: subjectIdToAssign,
+                  facultyId: fac.id,
+                };
 
-              const slot: TimetableSlot = {
-                id: `${day}-${period.id}-${cls.id}`,
-                day,
-                periodId: period.id,
-                classId: cls.id,
-                subjectId: assignedSubject,
-                facultyId: assignedFaculty.id,
-              };
-
-              newTimetable.push(slot);
-              // Mark this faculty as busy for this specific time slot
-              occupiedSlots.add(`${assignedFaculty.id}-${day}-${period.id}`);
+                newTimetable.push(slot);
+                occupiedFacultySlots.add(`${fac.id}-${day}-${period.id}`);
+                subjectsTaughtToday.add(subjectIdToAssign);
+                assignmentMade = true;
+                break; // Assignment made for this class, move to the next class
+              }
             }
           }
         }
@@ -92,15 +105,13 @@ export default function TimetableGenerator() {
 
   return (
     <div className="space-y-6">
-       {/* The JSX for this component remains the same */}
-       <div>
+      <div>
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Timetable Generator</h2>
         <p className="text-gray-600 dark:text-gray-400">Generate a new timetable based on the existing data.</p>
       </div>
 
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Controls</h3>
-
         {validationErrors.length > 0 && (
           <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg">
             <div className="flex items-start space-x-3">
@@ -114,7 +125,6 @@ export default function TimetableGenerator() {
             </div>
           </div>
         )}
-
         <div className="flex items-center gap-4">
           <button
             onClick={generateTimetable}
@@ -134,7 +144,6 @@ export default function TimetableGenerator() {
             </button>
           )}
         </div>
-        
         {generationStatus === 'success' && (
              <div className="mt-6 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg">
                 <div className="flex items-center space-x-3">
