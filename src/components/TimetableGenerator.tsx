@@ -35,25 +35,28 @@ export default function TimetableGenerator() {
       if (errors.length > 0) throw new Error(errors.join('\n'));
 
       const newTimetable: TimetableSlot[] = [];
-      const occupiedFacultySlots = new Set<string>(); // Tracks: "facultyId-day-periodId"
-      const dailyClassSubjects = new Map<string, Set<string>>(); // Tracks: "classId-day" -> Set of subjectIds
+      
+      // RULE 1: Track which faculty is busy in a specific time slot ("facultyId-day-periodId")
+      const occupiedFacultySlots = new Set<string>();
 
+      // RULE 2: Track subjects taught to a class on a specific day ("classId-day" -> Set of subjectIds)
+      const dailyClassSubjects = new Map<string, Set<string>>();
+
+      // --- NEW, CORRECT ALGORITHM ---
       for (const day of weekDays) {
-        for (const cls of classes) {
-            // Initialize the subject tracker for this class for this day
-            dailyClassSubjects.set(`${cls.id}-${day}`, new Set());
-        }
-
         for (const period of periods) {
           for (const cls of classes) {
             const dailyClassKey = `${cls.id}-${day}`;
+            if (!dailyClassSubjects.has(dailyClassKey)) {
+              dailyClassSubjects.set(dailyClassKey, new Set());
+            }
             const subjectsTaughtToday = dailyClassSubjects.get(dailyClassKey)!;
 
             // Find faculty who are free at this exact time
             const availableFaculty = faculty
-              .filter(f => f.subjects && f.subjects.length > 0 && !occupiedFacultySlots.has(`${f.id}-${day}-${period.id}`))
+              .filter(f => f.subjects?.length > 0 && !occupiedFacultySlots.has(`${f.id}-${day}-${period.id}`))
               .sort(() => 0.5 - Math.random());
-            
+
             let assignmentMade = false;
             for (const fac of availableFaculty) {
               // Find a subject this faculty teaches that has NOT been taught to this class today
@@ -72,10 +75,10 @@ export default function TimetableGenerator() {
                 };
 
                 newTimetable.push(slot);
-                occupiedFacultySlots.add(`${fac.id}-${day}-${period.id}`);
-                subjectsTaughtToday.add(subjectIdToAssign);
+                occupiedFacultySlots.add(`${fac.id}-${day}-${period.id}`); // Mark faculty as busy for this slot
+                subjectsTaughtToday.add(subjectIdToAssign); // Mark subject as used for this class today
                 assignmentMade = true;
-                break; // Assignment made for this class, move to the next class
+                break; // Assignment made, move to the next class
               }
             }
           }
@@ -109,7 +112,6 @@ export default function TimetableGenerator() {
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Timetable Generator</h2>
         <p className="text-gray-600 dark:text-gray-400">Generate a new timetable based on the existing data.</p>
       </div>
-
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Controls</h3>
         {validationErrors.length > 0 && (
