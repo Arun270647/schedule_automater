@@ -29,6 +29,7 @@ export interface Period {
   startTime: string;
   endTime: string;
   order: number;
+  isBreak?: boolean; 
 }
 
 export interface TimetableSlot {
