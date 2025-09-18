@@ -23,8 +23,11 @@ export default function TimetableView() {
 
   const timetableGrid = useMemo(() => {
     const grid: { [day: string]: { [periodId: string]: any } } = {};
-    const filteredTimetable = selectedEntityId
-      ? timetable.filter(slot => viewMode === 'class' ? slot.classId === selectedEntityId : slot.facultyId === selectedEntityId)
+    // When no entity is selected, show the timetable for the *first class* by default
+    const entityToFilter = selectedEntityId || (classes[0]?.id);
+    
+    const filteredTimetable = entityToFilter
+      ? timetable.filter(slot => viewMode === 'class' ? slot.classId === entityToFilter : slot.facultyId === entityToFilter)
       : timetable;
 
     for (const day of weekDays) {
@@ -38,7 +41,7 @@ export default function TimetableView() {
   }, [timetable, selectedEntityId, viewMode, sortedPeriods, classes, faculty, subjects]);
 
   if (timetable.length === 0) {
-    return <div className="text-center py-12">No timetable has been generated yet. Please go to the "Generate" tab.</div>;
+    return <div className="text-center py-12 text-gray-500 dark:text-gray-400">No timetable has been generated yet. Please go to the "Generate" tab.</div>;
   }
   
   const entityOptions = viewMode === 'class' ? classes : faculty;
@@ -63,34 +66,33 @@ export default function TimetableView() {
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">View Mode</label>
             <div className="flex space-x-4">
-              <label className="flex items-center"><input type="radio" value="class" checked={viewMode === 'class'} onChange={() => { setViewMode('class'); setSelectedEntityId(''); }} className="mr-2 text-blue-600 focus:ring-blue-500" /> By Class</label>
+              <label className="flex items-center"><input type="radio" value="class" checked={viewMode === 'class'} onChange={() => { setViewMode('class'); setSelectedEntityId(classes[0]?.id || ''); }} className="mr-2 text-blue-600 focus:ring-blue-500" /> By Class</label>
               <label className="flex items-center"><input type="radio" value="faculty" checked={viewMode === 'faculty'} onChange={() => { setViewMode('faculty'); setSelectedEntityId(''); }} className="mr-2 text-blue-600 focus:ring-blue-500" /> By Faculty</label>
             </div>
           </div>
           <div>
             <label htmlFor="entitySelect" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select {viewMode === 'class' ? 'Class' : 'Faculty'}</label>
-            {/* --- MODIFIED DROPDOWN --- */}
             <select 
               id="entitySelect"
-              value={selectedEntityId} 
+              value={selectedEntityId || (viewMode === 'class' ? classes[0]?.id : '')} 
               onChange={e => setSelectedEntityId(e.target.value)} 
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
-              <option value="">-- Select an option --</option>
+              {viewMode === 'faculty' && <option value="">-- Select a Faculty --</option>}
               {entityOptions.map(e => <option key={e.id} value={e.id}>{e.name} {e.section ? `(${e.section})` : ''}</option>)}
             </select>
           </div>
         </div>
       </div>
 
-      {/* --- MODIFIED TIMETABLE GRID WRAPPER --- */}
+      {/* --- MODIFIED TIMETABLE GRID --- */}
       <div className="overflow-x-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
         <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
           <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
             <tr>
-              <th scope="col" className="px-4 py-3 sticky left-0 bg-gray-50 dark:bg-gray-700">Day</th>
+              <th scope="col" className="px-6 py-4 sticky left-0 bg-gray-50 dark:bg-gray-700 z-10">Day</th>
               {sortedPeriods.map(p => (
-                <th key={p.id} scope="col" className="px-4 py-3 text-center whitespace-nowrap">
+                <th key={p.id} scope="col" className="px-6 py-4 text-center whitespace-nowrap min-w-[180px]">
                   <div>{p.name}</div>
                   <div className="font-normal text-gray-500">{new Date(`1970-01-01T${p.startTime}`).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                 </th>
@@ -99,23 +101,23 @@ export default function TimetableView() {
           </thead>
           <tbody>
             {weekDays.map(day => (
-              <tr key={day} className="bg-white border-b dark:bg-gray-800 dark:border-gray-700">
-                <th scope="row" className="px-4 py-4 font-medium text-gray-900 whitespace-nowrap dark:text-white sticky left-0 bg-white dark:bg-gray-800">{day}</th>
+              <tr key={day} className="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600/20">
+                <th scope="row" className="px-6 py-5 font-medium text-gray-900 whitespace-nowrap dark:text-white sticky left-0 bg-inherit z-10">{day}</th>
                 {sortedPeriods.map(p => {
                   if (p.isBreak) {
-                    return <td key={p.id} className="px-4 py-4 text-center bg-gray-50 dark:bg-gray-700/50 font-semibold align-middle">{p.name}</td>;
+                    return <td key={p.id} className="px-6 py-5 text-center bg-gray-50 dark:bg-gray-700/50 font-semibold align-middle">{p.name}</td>;
                   }
                   const slot = timetableGrid[day]?.[p.id];
                   return (
-                    <td key={p.id} className="px-4 py-4 text-center align-middle">
+                    <td key={p.id} className="px-6 py-5 text-center align-middle">
                       {slot ? (
-                        <div className="min-w-[150px]">
-                          <div className="font-bold text-blue-600 dark:text-blue-400 flex items-center justify-center gap-2">
-                             <BookOpen size={14} /> {getEntityName(slot.subjectId, 'subject')}
+                        <div>
+                          <div className="font-semibold text-sm text-blue-600 dark:text-blue-400 flex items-center justify-center gap-2">
+                             <BookOpen size={16} className="flex-shrink-0"/> <span>{getEntityName(slot.subjectId, 'subject')}</span>
                           </div>
-                          <div className="text-xs text-purple-600 dark:text-purple-400 flex items-center justify-center gap-1 mt-1">
-                             <User size={12} /> 
-                             {viewMode === 'class' ? getEntityName(slot.facultyId, 'faculty') : getEntityName(slot.classId, 'class')}
+                          <div className="text-xs text-purple-600 dark:text-purple-400 flex items-center justify-center gap-2 mt-2">
+                             <User size={14} className="flex-shrink-0"/> 
+                             <span>{viewMode === 'class' ? getEntityName(slot.facultyId, 'faculty') : getEntityName(slot.classId, 'class')}</span>
                           </div>
                         </div>
                       ) : (
