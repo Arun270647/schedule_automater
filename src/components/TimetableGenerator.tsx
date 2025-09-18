@@ -35,31 +35,32 @@ export default function TimetableGenerator() {
       if (errors.length > 0) throw new Error(errors.join('\n'));
 
       const newTimetable: TimetableSlot[] = [];
-      
-      // RULE 1: Track which faculty is busy in a specific time slot ("facultyId-day-periodId")
       const occupiedFacultySlots = new Set<string>();
-
-      // RULE 2: Track subjects taught to a class on a specific day ("classId-day" -> Set of subjectIds)
       const dailyClassSubjects = new Map<string, Set<string>>();
 
-      // --- NEW, CORRECT ALGORITHM ---
       for (const day of weekDays) {
+        // Initialize daily trackers
+        for (const cls of classes) {
+            dailyClassSubjects.set(`${cls.id}-${day}`, new Set());
+        }
+
         for (const period of periods) {
+          // --- MODIFIED SECTION: Skip breaks ---
+          if (period.isBreak) {
+            continue; // This will skip any period marked as a break (e.g., LUNCH)
+          }
+          // --- END OF MODIFICATION ---
+
           for (const cls of classes) {
             const dailyClassKey = `${cls.id}-${day}`;
-            if (!dailyClassSubjects.has(dailyClassKey)) {
-              dailyClassSubjects.set(dailyClassKey, new Set());
-            }
             const subjectsTaughtToday = dailyClassSubjects.get(dailyClassKey)!;
 
-            // Find faculty who are free at this exact time
             const availableFaculty = faculty
               .filter(f => f.subjects?.length > 0 && !occupiedFacultySlots.has(`${f.id}-${day}-${period.id}`))
               .sort(() => 0.5 - Math.random());
 
             let assignmentMade = false;
             for (const fac of availableFaculty) {
-              // Find a subject this faculty teaches that has NOT been taught to this class today
               const potentialSubjects = fac.subjects.filter(subId => !subjectsTaughtToday.has(subId));
 
               if (potentialSubjects.length > 0) {
@@ -75,10 +76,10 @@ export default function TimetableGenerator() {
                 };
 
                 newTimetable.push(slot);
-                occupiedFacultySlots.add(`${fac.id}-${day}-${period.id}`); // Mark faculty as busy for this slot
-                subjectsTaughtToday.add(subjectIdToAssign); // Mark subject as used for this class today
+                occupiedFacultySlots.add(`${fac.id}-${day}-${period.id}`);
+                subjectsTaughtToday.add(subjectIdToAssign);
                 assignmentMade = true;
-                break; // Assignment made, move to the next class
+                break;
               }
             }
           }
