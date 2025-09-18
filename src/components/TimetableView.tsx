@@ -1,6 +1,8 @@
-import { React,useState, useMemo } from 'react';
+import { React, useState, useMemo } from 'react';
 import { Download, Filter, User, BookOpen } from 'lucide-react';
 import { useData } from '../context/DataContext';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 export default function TimetableView() {
   const { classes, subjects, faculty, periods, timetable } = useData();
@@ -26,6 +28,58 @@ export default function TimetableView() {
       case 'subject': return subjects.find(s => s.id === id)?.name || 'N/A';
       default: return 'Unknown';
     }
+  };
+
+  const exportToPDF = () => {
+    const doc = new jsPDF();
+    const entityName = viewMode === 'class' 
+      ? classes.find(c => c.id === selectedEntityId)?.name || 'Timetable'
+      : faculty.find(f => f.id === selectedEntityId)?.name || 'Timetable';
+    
+    // Add title
+    doc.setFontSize(18);
+    doc.text(`${entityName} Timetable`, 14, 22);
+    
+    // Prepare table data
+    const tableData = weekDays.map(day => {
+      const rowData = [day];
+      for (const period of sortedPeriods) {
+        const slot = timetableGrid[day]?.[period.id];
+        if (period.isBreak) {
+          rowData.push(period.name);
+        } else if (slot) {
+          const subjectName = getEntityName(slot.subjectId, 'subject');
+          const personName = viewMode === 'class' 
+            ? getEntityName(slot.facultyId, 'faculty') 
+            : getEntityName(slot.classId, 'class');
+          rowData.push(`${subjectName}\n${personName}`);
+        } else {
+          rowData.push('--');
+        }
+      }
+      return rowData;
+    });
+    
+    // Prepare table headers
+    const tableHeaders = ['Day'];
+    sortedPeriods.forEach(period => {
+      const timeStr = new Date(`1970-01-01T${period.startTime}`).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      tableHeaders.push(`${period.name}\n${timeStr}`);
+    });
+    
+    // Generate table
+    (doc as any).autoTable({
+      head: [tableHeaders],
+      body: tableData,
+      startY: 30,
+      styles: { fontSize: 8, cellPadding: 3 },
+      headStyles: { fillColor: [41, 50, 65] },
+      alternateRowStyles: { fillColor: [240, 240, 240] },
+      columnStyles: { 0: { fontStyle: 'bold' } }
+    });
+    
+    // Save PDF
+    doc.save(`${entityName.replace(/\s+/g, '_')}_timetable.pdf`);
   };
 
   const timetableGrid = useMemo(() => {
@@ -58,7 +112,10 @@ export default function TimetableView() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Timetable View</h2>
-        <button className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50" disabled>
+        <button 
+          onClick={exportToPDF}
+          className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+        >
           <Download className="h-4 w-4 mr-2" />
           Export PDF
         </button>
@@ -98,9 +155,9 @@ export default function TimetableView() {
         <table className="min-w-full text-sm text-left text-gray-500 dark:text-gray-400">
           <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
             <tr>
-              <th scope="col" className="px-6 py-4 sticky left-0 bg-gray-50 dark:bg-gray-700 z-10 font-semibold">Day</th>
+              <th scope="col" className="px-3 py-3 sticky left-0 bg-gray-50 dark:bg-gray-700 z-10 font-semibold w-28">Day</th>
               {sortedPeriods.map(p => (
-                <th key={p.id} scope="col" className="px-6 py-4 text-center whitespace-nowrap">
+                <th key={p.id} scope="col" className="px-2 py-2 text-center whitespace-nowrap">
                   <div>{p.name}</div>
                   <div className="font-normal text-xs mt-1">{new Date(`1970-01-01T${p.startTime}`).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                 </th>
@@ -110,22 +167,23 @@ export default function TimetableView() {
           <tbody>
             {weekDays.map(day => (
               <tr key={day} className="bg-white border-t dark:bg-gray-800 dark:border-gray-700">
-                <th scope="row" className="px-6 py-5 font-bold text-gray-900 whitespace-nowrap dark:text-white sticky left-0 bg-white dark:bg-gray-800 z-10">{day}</th>
+                <th scope="row" className="px-3 py-3 font-bold text-gray-900 whitespace-nowrap dark:text-white sticky left-0 bg-white dark:bg-gray-800 z-10">{day}</th>
                 {sortedPeriods.map(p => {
                   if (p.isBreak) {
-                    return <td key={p.id} className="px-6 py-5 text-center bg-gray-50 dark:bg-gray-700/50 font-semibold align-middle text-gray-500 dark:text-gray-400">{p.name}</td>;
+                    return <td key={p.id} className="px-2 py-3 text-center bg-gray-50 dark:bg-gray-700/50 font-semibold align-middle text-gray-500 dark:text-gray-400">{p.name}</td>;
                   }
                   const slot = timetableGrid[day]?.[p.id];
                   return (
-                    <td key={p.id} className="px-6 py-5 text-center align-middle min-w-[200px]">
+                    <td key={p.id} className="px-2 py-3 text-center align-middle">
                       {slot ? (
-                        <div>
-                          <div className="font-semibold text-base text-blue-600 dark:text-blue-400 flex items-center justify-center gap-2">
-                             <BookOpen size={15} className="flex-shrink-0"/> <span>{getEntityName(slot.subjectId, 'subject')}</span>
+                        <div className="mx-auto w-full">
+                          <div className="font-semibold text-sm text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                             <BookOpen size={14} className="flex-shrink-0 mr-1"/> 
+                             <span className="truncate max-w-[120px] inline-block">{getEntityName(slot.subjectId, 'subject')}</span>
                           </div>
-                          <div className="text-sm text-purple-600 dark:text-purple-400 flex items-center justify-center gap-2 mt-2">
-                             <User size={14} className="flex-shrink-0"/> 
-                             <span>{viewMode === 'class' ? getEntityName(slot.facultyId, 'faculty') : getEntityName(slot.classId, 'class')}</span>
+                          <div className="text-xs text-purple-600 dark:text-purple-400 flex items-center justify-center mt-1">
+                             <User size={12} className="flex-shrink-0 mr-1"/> 
+                             <span className="truncate max-w-[120px] inline-block">{viewMode === 'class' ? getEntityName(slot.facultyId, 'faculty') : getEntityName(slot.classId, 'class')}</span>
                           </div>
                         </div>
                       ) : (
