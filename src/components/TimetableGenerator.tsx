@@ -10,6 +10,7 @@ export default function TimetableGenerator() {
   const [errorMessage, setErrorMessage] = useState('');
 
   const weekDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const PRACTICAL_DAY_LIMIT = 3;
 
   const validateData = () => {
     const errors = [];
@@ -30,69 +31,111 @@ export default function TimetableGenerator() {
 
     try {
       await new Promise(resolve => setTimeout(resolve, 50));
-      
       const errors = validateData();
       if (errors.length > 0) throw new Error(errors.join('\n'));
 
-      const newTimetable: TimetableSlot[] = [];
+      const theorySubjects = subjects.filter(s => !s.name.toUpperCase().startsWith('PRACTICAL'));
+      const practicalSubjects = subjects.filter(s => s.name.toUpperCase().startsWith('PRACTICAL'));
+      
+      const grid: (TimetableSlot | null)[][] = Array.from({ length: weekDays.length }, () => Array(periods.length * classes.length).fill(null));
+      
       const occupiedFacultySlots = new Set<string>();
       const dailyClassSubjects = new Map<string, Set<string>>();
+      const classPracticalDays = new Map<string, Set<string>>();
 
-      for (const day of weekDays) {
-        // Initialize daily trackers
-        for (const cls of classes) {
-            dailyClassSubjects.set(`${cls.id}-${day}`, new Set());
-        }
+      // --- PASS 1: SCHEDULE UNIQUE THEORY CLASSES ---
+      for (let dayIndex = 0; dayIndex < weekDays.length; dayIndex++) {
+        const day = weekDays[dayIndex];
+        for (const cls of classes) { dailyClassSubjects.set(`${cls.id}-${day}`, new Set()); }
 
-        for (const period of periods) {
-          // --- MODIFIED SECTION: Skip breaks ---
-          if (period.isBreak) {
-            continue; // This will skip any period marked as a break (e.g., LUNCH)
-          }
-          // --- END OF MODIFICATION ---
+        for (let periodIndex = 0; periodIndex < periods.length; periodIndex++) {
+          const period = periods[periodIndex];
+          if (period.isBreak) continue;
 
-          for (const cls of classes) {
-            const dailyClassKey = `${cls.id}-${day}`;
-            const subjectsTaughtToday = dailyClassSubjects.get(dailyClassKey)!;
+          for (let classIndex = 0; classIndex < classes.length; classIndex++) {
+            const cls = classes[classIndex];
+            const subjectsTaughtToday = dailyClassSubjects.get(`${cls.id}-${day}`)!;
+            
+            const availableFaculty = faculty.filter(f => !occupiedFacultySlots.has(`${f.id}-${day}-${period.id}`));
 
-            const availableFaculty = faculty
-              .filter(f => f.subjects?.length > 0 && !occupiedFacultySlots.has(`${f.id}-${day}-${period.id}`))
-              .sort(() => 0.5 - Math.random());
-
-            let assignmentMade = false;
-            for (const fac of availableFaculty) {
-              const potentialSubjects = fac.subjects.filter(subId => !subjectsTaughtToday.has(subId));
-
+            for (const fac of availableFaculty.sort(() => 0.5 - Math.random())) {
+              const potentialSubjects = fac.subjects.filter(subId => theorySubjects.some(ts => ts.id === subId) && !subjectsTaughtToday.has(subId));
+              
               if (potentialSubjects.length > 0) {
-                const subjectIdToAssign = potentialSubjects[0];
-                
-                const slot: TimetableSlot = {
-                  id: `${day}-${period.id}-${cls.id}`,
-                  day,
-                  periodId: period.id,
-                  classId: cls.id,
-                  subjectId: subjectIdToAssign,
-                  facultyId: fac.id,
-                };
-
-                newTimetable.push(slot);
+                const subjectId = potentialSubjects[0];
+                const slot: TimetableSlot = { id: `${day}-${period.id}-${cls.id}`, day, periodId: period.id, classId: cls.id, subjectId, facultyId: fac.id };
+                const flatIndex = dayIndex * (periods.length * classes.length) + periodIndex * classes.length + classIndex;
+                grid[dayIndex][flatIndex] = slot;
                 occupiedFacultySlots.add(`${fac.id}-${day}-${period.id}`);
-                subjectsTaughtToday.add(subjectIdToAssign);
-                assignmentMade = true;
+                subjectsTaughtToday.add(subjectId);
                 break;
               }
             }
           }
         }
       }
+
+      // --- PASS 2: FILL GAPS WITH PRACTICALS ---
+      for (let dayIndex = 0; dayIndex < weekDays.length; dayIndex++) {
+        const day = weekDays[dayIndex];
+        for (let periodIndex = 0; periodIndex < periods.length; periodIndex++) {
+          if (periods[periodIndex].isBreak) continue;
+          for (let classIndex = 0; classIndex < classes.length; classIndex++) {
+            const cls = classes[classIndex];
+            const flatIndex = dayIndex * (periods.length * classes.length) + periodIndex * classes.length + classIndex;
+
+            if (grid[dayIndex][flatIndex] === null) {
+              if (!classPracticalDays.has(cls.id)) classPracticalDays.set(cls.id, new Set());
+              const practicalDays = classPracticalDays.get(cls.id)!;
+
+              if (practicalDays.size < PRACTICAL_DAY_LIMIT || practicalDays.has(day)) {
+                  const availableFaculty = faculty.filter(f => !occupiedFacultySlots.has(`${f.id}-${day}-${periods[periodIndex].id}`));
+                  for (const fac of availableFaculty) {
+                    const practicals = fac.subjects.filter(subId => practicalSubjects.some(ps => ps.id === subId));
+                    if (practicals.length > 0) {
+                      const subjectId = practicals[0];
+                      const slot: TimetableSlot = { id: `${day}-${periods[periodIndex].id}-${cls.id}`, day, periodId: periods[periodIndex].id, classId: cls.id, subjectId, facultyId: fac.id };
+                      grid[dayIndex][flatIndex] = slot;
+                      occupiedFacultySlots.add(`${fac.id}-${day}-${periods[periodIndex].id}`);
+                      practicalDays.add(day);
+                      break;
+                    }
+                  }
+              }
+            }
+          }
+        }
+      }
       
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      setTimetable(newTimetable);
+      // --- PASS 3: FILL ANY REMAINING GAPS BY REPEATING THEORY ---
+      for (let dayIndex = 0; dayIndex < weekDays.length; dayIndex++) {
+          for (let periodIndex = 0; periodIndex < periods.length; periodIndex++) {
+              if(periods[periodIndex].isBreak) continue;
+              for(let classIndex = 0; classIndex < classes.length; classIndex++){
+                  const flatIndex = dayIndex * (periods.length * classes.length) + periodIndex * classes.length + classIndex;
+                  if(grid[dayIndex][flatIndex] === null){
+                      const day = weekDays[dayIndex];
+                      const period = periods[periodIndex];
+                      const cls = classes[classIndex];
+                      const availableFaculty = faculty.filter(f => f.subjects?.length > 0 && !occupiedFacultySlots.has(`${f.id}-${day}-${period.id}`));
+                      if(availableFaculty.length > 0){
+                          const fac = availableFaculty[0];
+                          const subjectId = fac.subjects.find(subId => theorySubjects.some(ts => ts.id === subId)) || fac.subjects[0];
+                          const slot: TimetableSlot = { id: `${day}-${period.id}-${cls.id}`, day, periodId: period.id, classId: cls.id, subjectId, facultyId: fac.id };
+                          grid[dayIndex][flatIndex] = slot;
+                          occupiedFacultySlots.add(`${fac.id}-${day}-${period.id}`);
+                      }
+                  }
+              }
+          }
+      }
+
+      setTimetable(grid.flat().filter(Boolean) as TimetableSlot[]);
       setGenerationStatus('success');
 
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'An unknown error occurred.');
-      setGenerationStatus('error');
+        setErrorMessage(error instanceof Error ? error.message : 'An unknown error occurred.');
+        setGenerationStatus('error');
     } finally {
       setIsGenerating(false);
     }
