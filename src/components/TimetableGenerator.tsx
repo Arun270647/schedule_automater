@@ -42,6 +42,7 @@ export default function TimetableGenerator() {
       const occupiedFacultySlots = new Set<string>();
       const dailyClassSubjects = new Map<string, Set<string>>();
       const classPracticalDays = new Map<string, Set<string>>();
+      const dailyClassPracticalSubject = new Map<string, string>();
 
       // --- PASS 1: SCHEDULE UNIQUE THEORY CLASSES ---
       for (let dayIndex = 0; dayIndex < weekDays.length; dayIndex++) {
@@ -75,7 +76,7 @@ export default function TimetableGenerator() {
         }
       }
 
-      // --- PASS 2: FILL GAPS WITH PRACTICALS ---
+      // --- PASS 2: FILL GAPS WITH PRACTICALS (NEW LOGIC) ---
       for (let dayIndex = 0; dayIndex < weekDays.length; dayIndex++) {
         const day = weekDays[dayIndex];
         for (let periodIndex = 0; periodIndex < periods.length; periodIndex++) {
@@ -87,14 +88,29 @@ export default function TimetableGenerator() {
             if (grid[dayIndex][flatIndex] === null) {
               if (!classPracticalDays.has(cls.id)) classPracticalDays.set(cls.id, new Set());
               const practicalDays = classPracticalDays.get(cls.id)!;
+              const dailyPractKey = `${cls.id}-${day}`;
+              const allowedPracticalId = dailyClassPracticalSubject.get(dailyPractKey);
+              
+              const availableFaculty = faculty.filter(f => !occupiedFacultySlots.has(`${f.id}-${day}-${periods[periodIndex].id}`));
 
               if (practicalDays.size < PRACTICAL_DAY_LIMIT || practicalDays.has(day)) {
-                  const availableFaculty = faculty.filter(f => !occupiedFacultySlots.has(`${f.id}-${day}-${periods[periodIndex].id}`));
                   for (const fac of availableFaculty) {
-                    const practicals = fac.subjects.filter(subId => practicalSubjects.some(ps => ps.id === subId));
-                    if (practicals.length > 0) {
-                      const subjectId = practicals[0];
-                      const slot: TimetableSlot = { id: `${day}-${periods[periodIndex].id}-${cls.id}`, day, periodId: periods[periodIndex].id, classId: cls.id, subjectId, facultyId: fac.id };
+                    let subjectToAssign: string | undefined = undefined;
+                    
+                    if (allowedPracticalId) {
+                        if (fac.subjects.includes(allowedPracticalId)) {
+                            subjectToAssign = allowedPracticalId;
+                        }
+                    } else {
+                        const potentialPracticals = fac.subjects.filter(sId => practicalSubjects.some(ps => ps.id === sId));
+                        if(potentialPracticals.length > 0) {
+                            subjectToAssign = potentialPracticals[0];
+                            dailyClassPracticalSubject.set(dailyPractKey, subjectToAssign);
+                        }
+                    }
+
+                    if (subjectToAssign) {
+                      const slot: TimetableSlot = { id: `${day}-${periods[periodIndex].id}-${cls.id}`, day, periodId: periods[periodIndex].id, classId: cls.id, subjectId: subjectToAssign, facultyId: fac.id };
                       grid[dayIndex][flatIndex] = slot;
                       occupiedFacultySlots.add(`${fac.id}-${day}-${periods[periodIndex].id}`);
                       practicalDays.add(day);
@@ -108,23 +124,21 @@ export default function TimetableGenerator() {
       }
       
       // --- PASS 3: FILL ANY REMAINING GAPS BY REPEATING THEORY ---
-      for (let dayIndex = 0; dayIndex < weekDays.length; dayIndex++) {
-          for (let periodIndex = 0; periodIndex < periods.length; periodIndex++) {
-              if(periods[periodIndex].isBreak) continue;
-              for(let classIndex = 0; classIndex < classes.length; classIndex++){
-                  const flatIndex = dayIndex * (periods.length * classes.length) + periodIndex * classes.length + classIndex;
-                  if(grid[dayIndex][flatIndex] === null){
-                      const day = weekDays[dayIndex];
-                      const period = periods[periodIndex];
-                      const cls = classes[classIndex];
-                      const availableFaculty = faculty.filter(f => f.subjects?.length > 0 && !occupiedFacultySlots.has(`${f.id}-${day}-${period.id}`));
-                      if(availableFaculty.length > 0){
-                          const fac = availableFaculty[0];
-                          const subjectId = fac.subjects.find(subId => theorySubjects.some(ts => ts.id === subId)) || fac.subjects[0];
-                          const slot: TimetableSlot = { id: `${day}-${period.id}-${cls.id}`, day, periodId: period.id, classId: cls.id, subjectId, facultyId: fac.id };
-                          grid[dayIndex][flatIndex] = slot;
-                          occupiedFacultySlots.add(`${fac.id}-${day}-${period.id}`);
-                      }
+      for (let i = 0; i < grid.flat().length; i++) {
+          const dayIndex = Math.floor(i / (periods.length * classes.length));
+          const periodIndex = Math.floor((i % (periods.length * classes.length)) / classes.length);
+          const classIndex = i % classes.length;
+
+          if (grid[dayIndex][i % (periods.length * classes.length)] === null && !periods[periodIndex].isBreak) {
+              const day = weekDays[dayIndex], period = periods[periodIndex], cls = classes[classIndex];
+              const availableFaculty = faculty.filter(f => !occupiedFacultySlots.has(`${f.id}-${day}-${period.id}`));
+              if (availableFaculty.length > 0) {
+                  const fac = availableFaculty[0];
+                  const subjectId = fac.subjects.find(subId => theorySubjects.some(ts => ts.id === subId)) || fac.subjects[0];
+                  if (subjectId) {
+                      const slot: TimetableSlot = { id: `${day}-${period.id}-${cls.id}`, day, periodId: period.id, classId: cls.id, subjectId, facultyId: fac.id };
+                      grid[dayIndex][i % (periods.length * classes.length)] = slot;
+                      occupiedFacultySlots.add(`${fac.id}-${day}-${period.id}`);
                   }
               }
           }
@@ -140,7 +154,7 @@ export default function TimetableGenerator() {
       setIsGenerating(false);
     }
   };
-
+  
   const clearTimetable = () => {
     if (window.confirm('Are you sure? This will clear the entire timetable.')) {
       setTimetable([]);
@@ -149,10 +163,10 @@ export default function TimetableGenerator() {
   };
 
   const validationErrors = validateData();
-
+  
   return (
     <div className="space-y-6">
-      <div>
+       <div>
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Timetable Generator</h2>
         <p className="text-gray-600 dark:text-gray-400">Generate a new timetable based on the existing data.</p>
       </div>
