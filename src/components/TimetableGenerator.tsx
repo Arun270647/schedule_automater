@@ -1,160 +1,122 @@
 import React, { useState } from 'react';
-import { Play, RotateCcw, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Play, RotateCcw, AlertTriangle } from 'lucide-react';
 import { useData } from '../context/DataContext';
-import type { TimetableSlot } from '../context/DataContext';
+import { TimetableSlot } from '../types';
 
-export default function TimetableGenerator() {
-  const { classes, subjects, faculty, periods, setTimetable, timetable } = useData();
+const TimetableGenerator: React.FC = () => {
+  const { faculties, subjects, classes, periods, setTimetable } = useData();
+
   const [isGenerating, setIsGenerating] = useState(false);
-  const [generationStatus, setGenerationStatus] = useState<'idle' | 'generating' | 'success' | 'error'>('idle');
+  const [generationStatus, setGenerationStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
 
-  const weekDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const PRACTICAL_DAY_LIMIT = 3;
-
   const validateData = () => {
-    const errors = [];
-    if (classes.length === 0) errors.push('No classes defined.');
-    if (subjects.length === 0) errors.push('No subjects defined.');
-    if (faculty.length === 0) errors.push('No faculty defined.');
+    const errors: string[] = [];
+    if (faculties.length === 0) errors.push('No faculties available.');
+    if (subjects.length === 0) errors.push('No subjects available.');
+    if (classes.length === 0) errors.push('No classes available.');
     if (periods.length === 0) errors.push('No periods defined.');
-    if (!faculty.some(f => f.subjects && f.subjects.length > 0)) {
-      errors.push('No faculty members have been assigned any subjects.');
-    }
     return errors;
   };
 
-  const generateTimetable = async () => {
+  const generateTimetable = () => {
     setIsGenerating(true);
-    setGenerationStatus('generating');
+    setGenerationStatus('idle');
     setErrorMessage('');
 
     try {
-      await new Promise(resolve => setTimeout(resolve, 50));
-      const errors = validateData();
-      if (errors.length > 0) throw new Error(errors.join('\n'));
+      const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const grid: (TimetableSlot | null)[][] = Array.from({ length: days.length }, () =>
+        Array(periods.length * classes.length).fill(null)
+      );
 
-      const theorySubjects = subjects.filter(s => !s.name.toUpperCase().startsWith('PRACTICAL'));
-      const practicalSubjects = subjects.filter(s => s.name.toUpperCase().startsWith('PRACTICAL'));
-      
-      const grid: (TimetableSlot | null)[][] = Array.from({ length: weekDays.length }, () => Array(periods.length * classes.length).fill(null));
-      
+      // Track faculty and class usage per day
       const occupiedFacultySlots = new Set<string>();
-      const dailyClassSubjects = new Map<string, Set<string>>();
-      const classPracticalDays = new Map<string, Set<string>>();
-      const dailyClassPracticalSubject = new Map<string, string>();
+      const classSubjectsTaughtToday: Record<string, Record<string, Set<string>>> = {};
 
-      // --- PASS 1: SCHEDULE UNIQUE THEORY CLASSES ---
-      for (let dayIndex = 0; dayIndex < weekDays.length; dayIndex++) {
-        const day = weekDays[dayIndex];
-        for (const cls of classes) { dailyClassSubjects.set(`${cls.id}-${day}`, new Set()); }
+      for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
+        const day = days[dayIndex];
+        classSubjectsTaughtToday[day] = {};
 
-        for (let periodIndex = 0; periodIndex < periods.length; periodIndex++) {
-          const period = periods[periodIndex];
-          if (period.isBreak) continue;
+        for (let cls of classes) {
+          classSubjectsTaughtToday[day][cls.id] = new Set();
 
-          for (let classIndex = 0; classIndex < classes.length; classIndex++) {
-            const cls = classes[classIndex];
-            const subjectsTaughtToday = dailyClassSubjects.get(`${cls.id}-${day}`)!;
-            
-            const availableFaculty = faculty.filter(f => !occupiedFacultySlots.has(`${f.id}-${day}-${period.id}`));
+          for (let period of periods) {
+            let assignedSlot: TimetableSlot | null = null;
 
-            for (const fac of availableFaculty.sort(() => 0.5 - Math.random())) {
-              const potentialSubjects = fac.subjects.filter(subId => theorySubjects.some(ts => ts.id === subId) && !subjectsTaughtToday.has(subId));
-              
-              if (potentialSubjects.length > 0) {
-                const subjectId = potentialSubjects[0];
-                const slot: TimetableSlot = { id: `${day}-${period.id}-${cls.id}`, day, periodId: period.id, classId: cls.id, subjectId, facultyId: fac.id };
-                const flatIndex = dayIndex * (periods.length * classes.length) + periodIndex * classes.length + classIndex;
-                grid[dayIndex][flatIndex] = slot;
-                occupiedFacultySlots.add(`${fac.id}-${day}-${period.id}`);
-                subjectsTaughtToday.add(subjectId);
-                break;
+            for (let fac of faculties) {
+              const subjectId = fac.subjects.find(subId => {
+                const sub = subjects.find(s => s.id === subId);
+                if (!sub) return false;
+
+                // Rule 1: Teacher should not repeat for same class in a day
+                const alreadyTaught = classSubjectsTaughtToday[day][cls.id].has(fac.id);
+                const isException = fac.subjects.length > 1 || sub.isPractical;
+
+                return (!alreadyTaught || isException);
+              });
+
+              if (!subjectId) continue;
+
+              // Check faculty slot availability
+              if (occupiedFacultySlots.has(`${fac.id}-${day}-${period.id}`)) continue;
+
+              // Assign slot
+              assignedSlot = {
+                id: `${day}-${period.id}-${cls.id}`,
+                day,
+                periodId: period.id,
+                classId: cls.id,
+                subjectId,
+                facultyId: fac.id,
+              };
+
+              grid[dayIndex][period.id * classes.length + classes.indexOf(cls)] = assignedSlot;
+              occupiedFacultySlots.add(`${fac.id}-${day}-${period.id}`);
+              classSubjectsTaughtToday[day][cls.id].add(fac.id);
+              break;
+            }
+
+            // If no faculty matched → fallback to any available subject/faculty
+            if (!assignedSlot) {
+              for (let fac of faculties) {
+                for (let subId of fac.subjects) {
+                  const sub = subjects.find(s => s.id === subId);
+                  if (!sub) continue;
+                  if (occupiedFacultySlots.has(`${fac.id}-${day}-${period.id}`)) continue;
+
+                  assignedSlot = {
+                    id: `${day}-${period.id}-${cls.id}`,
+                    day,
+                    periodId: period.id,
+                    classId: cls.id,
+                    subjectId: subId,
+                    facultyId: fac.id,
+                  };
+
+                  grid[dayIndex][period.id * classes.length + classes.indexOf(cls)] = assignedSlot;
+                  occupiedFacultySlots.add(`${fac.id}-${day}-${period.id}`);
+                  classSubjectsTaughtToday[day][cls.id].add(fac.id);
+                  break;
+                }
+                if (assignedSlot) break;
               }
             }
           }
         }
       }
 
-      // --- PASS 2: FILL GAPS WITH PRACTICALS (NEW LOGIC) ---
-      for (let dayIndex = 0; dayIndex < weekDays.length; dayIndex++) {
-        const day = weekDays[dayIndex];
-        for (let periodIndex = 0; periodIndex < periods.length; periodIndex++) {
-          if (periods[periodIndex].isBreak) continue;
-          for (let classIndex = 0; classIndex < classes.length; classIndex++) {
-            const cls = classes[classIndex];
-            const flatIndex = dayIndex * (periods.length * classes.length) + periodIndex * classes.length + classIndex;
-
-            if (grid[dayIndex][flatIndex] === null) {
-              if (!classPracticalDays.has(cls.id)) classPracticalDays.set(cls.id, new Set());
-              const practicalDays = classPracticalDays.get(cls.id)!;
-              const dailyPractKey = `${cls.id}-${day}`;
-              const allowedPracticalId = dailyClassPracticalSubject.get(dailyPractKey);
-              
-              const availableFaculty = faculty.filter(f => !occupiedFacultySlots.has(`${f.id}-${day}-${periods[periodIndex].id}`));
-
-              if (practicalDays.size < PRACTICAL_DAY_LIMIT || practicalDays.has(day)) {
-                  for (const fac of availableFaculty) {
-                    let subjectToAssign: string | undefined = undefined;
-                    
-                    if (allowedPracticalId) {
-                        if (fac.subjects.includes(allowedPracticalId)) {
-                            subjectToAssign = allowedPracticalId;
-                        }
-                    } else {
-                        const potentialPracticals = fac.subjects.filter(sId => practicalSubjects.some(ps => ps.id === sId));
-                        if(potentialPracticals.length > 0) {
-                            subjectToAssign = potentialPracticals[0];
-                            dailyClassPracticalSubject.set(dailyPractKey, subjectToAssign);
-                        }
-                    }
-
-                    if (subjectToAssign) {
-                      const slot: TimetableSlot = { id: `${day}-${periods[periodIndex].id}-${cls.id}`, day, periodId: periods[periodIndex].id, classId: cls.id, subjectId: subjectToAssign, facultyId: fac.id };
-                      grid[dayIndex][flatIndex] = slot;
-                      occupiedFacultySlots.add(`${fac.id}-${day}-${periods[periodIndex].id}`);
-                      practicalDays.add(day);
-                      break;
-                    }
-                  }
-              }
-            }
-          }
-        }
-      }
-      
-      // --- PASS 3: FILL ANY REMAINING GAPS BY REPEATING THEORY ---
-      for (let i = 0; i < grid.flat().length; i++) {
-          const dayIndex = Math.floor(i / (periods.length * classes.length));
-          const periodIndex = Math.floor((i % (periods.length * classes.length)) / classes.length);
-          const classIndex = i % classes.length;
-
-          if (grid[dayIndex][i % (periods.length * classes.length)] === null && !periods[periodIndex].isBreak) {
-              const day = weekDays[dayIndex], period = periods[periodIndex], cls = classes[classIndex];
-              const availableFaculty = faculty.filter(f => !occupiedFacultySlots.has(`${f.id}-${day}-${period.id}`));
-              if (availableFaculty.length > 0) {
-                  const fac = availableFaculty[0];
-                  const subjectId = fac.subjects.find(subId => theorySubjects.some(ts => ts.id === subId)) || fac.subjects[0];
-                  if (subjectId) {
-                      const slot: TimetableSlot = { id: `${day}-${period.id}-${cls.id}`, day, periodId: period.id, classId: cls.id, subjectId, facultyId: fac.id };
-                      grid[dayIndex][i % (periods.length * classes.length)] = slot;
-                      occupiedFacultySlots.add(`${fac.id}-${day}-${period.id}`);
-                  }
-              }
-          }
-      }
-
+      // Flatten and remove nulls
       setTimetable(grid.flat().filter(Boolean) as TimetableSlot[]);
       setGenerationStatus('success');
-
     } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : 'An unknown error occurred.');
-        setGenerationStatus('error');
+      setErrorMessage(error instanceof Error ? error.message : 'An unknown error occurred.');
+      setGenerationStatus('error');
     } finally {
       setIsGenerating(false);
     }
   };
-  
+
   const clearTimetable = () => {
     if (window.confirm('Are you sure? This will clear the entire timetable.')) {
       setTimetable([]);
@@ -163,10 +125,10 @@ export default function TimetableGenerator() {
   };
 
   const validationErrors = validateData();
-  
+
   return (
     <div className="space-y-6">
-       <div>
+      <div>
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Timetable Generator</h2>
         <p className="text-gray-600 dark:text-gray-400">Generate a new timetable based on the existing data.</p>
       </div>
@@ -191,7 +153,17 @@ export default function TimetableGenerator() {
             disabled={isGenerating || validationErrors.length > 0}
             className="inline-flex items-center px-6 py-3 rounded-lg font-medium transition-colors duration-200 bg-blue-600 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
-            {isGenerating ? (<><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>Generating...</>) : (<><Play className="h-5 w-5 mr-2" />Generate Timetable</>)}
+            {isGenerating ? (
+              <>
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                Generating...
+              </>
+            ) : (
+              <>
+                <Play className="h-5 w-5 mr-2" />
+                Generate Timetable
+              </>
+            )}
           </button>
           {timetable.length > 0 && (
             <button
@@ -204,17 +176,9 @@ export default function TimetableGenerator() {
             </button>
           )}
         </div>
-        {generationStatus === 'success' && (
-             <div className="mt-6 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg">
-                <div className="flex items-center space-x-3">
-                    <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
-                    <p className="text-sm font-medium text-green-800 dark:text-green-200">
-                        Timetable generated successfully. Go to the "View Timetable" tab to see the results.
-                    </p>
-                </div>
-            </div>
-        )}
       </div>
     </div>
   );
-}
+};
+
+export default TimetableGenerator;
