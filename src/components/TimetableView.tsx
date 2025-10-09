@@ -169,12 +169,12 @@ export default function TimetableView() {
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
-        <table className="min-w-full text-sm text-left text-gray-500 dark:text-gray-400">
+        <table className="w-full table-fixed text-sm text-gray-500 dark:text-gray-400">
           <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
             <tr>
-              <th scope="col" className="px-3 py-3 sticky left-0 bg-gray-50 dark:bg-gray-700 z-10 font-semibold w-28">Day</th>
+              <th scope="col" className="px-3 py-3 bg-gray-50 dark:bg-gray-700 font-semibold w-24 text-left">Day</th>
               {sortedPeriods.map(p => (
-                <th key={p.id} scope="col" className="px-2 py-2 text-center whitespace-nowrap">
+                <th key={p.id} scope="col" className="px-2 py-2 text-center whitespace-nowrap" style={{ width: `${100 / (sortedPeriods.length + 1)}%` }}>
                   <div>{p.name}</div>
                   <div className="font-normal text-xs mt-1">{new Date(`1970-01-01T${p.startTime}`).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                 </th>
@@ -184,7 +184,7 @@ export default function TimetableView() {
           <tbody>
             {weekDays.map(day => (
               <tr key={day} className="bg-white border-t dark:bg-gray-800 dark:border-gray-700">
-                <th scope="row" className="px-3 py-3 font-bold text-gray-900 whitespace-nowrap dark:text-white sticky left-0 bg-white dark:bg-gray-800 z-10">{day}</th>
+                <th scope="row" className="px-3 py-3 font-bold text-gray-900 whitespace-nowrap dark:text-white bg-white dark:bg-gray-800 text-left">{day}</th>
                 {sortedPeriods.map(p => {
                   if (p.isBreak) {
                     return <td key={p.id} className="px-2 py-3 text-center bg-gray-50 dark:bg-gray-700/50 font-semibold align-middle text-gray-500 dark:text-gray-400">{p.name}</td>;
@@ -195,12 +195,12 @@ export default function TimetableView() {
                       {slot ? (
                         <div className="mx-auto w-full">
                           <div className="font-semibold text-sm text-blue-600 dark:text-blue-400 flex items-center justify-center">
-                            <BookOpen size={14} className="flex-shrink-0 mr-1"/> 
-                            <span className="truncate max-w-[120px] inline-block">{getEntityName(slot.subjectId, 'subject')}</span>
+                            <BookOpen size={14} className="flex-shrink-0 mr-1"/>
+                            <span className="truncate inline-block" style={{ maxWidth: '90%' }}>{getEntityName(slot.subjectId, 'subject')}</span>
                           </div>
                           <div className="text-xs text-purple-600 dark:text-purple-400 flex items-center justify-center mt-1">
-                            <User size={12} className="flex-shrink-0 mr-1"/> 
-                            <span className="truncate max-w-[120px] inline-block">{viewMode === 'class' ? getEntityName(slot.facultyId, 'faculty') : getEntityName(slot.classId, 'class')}</span>
+                            <User size={12} className="flex-shrink-0 mr-1"/>
+                            <span className="truncate inline-block" style={{ maxWidth: '90%' }}>{viewMode === 'class' ? getEntityName(slot.facultyId, 'faculty') : getEntityName(slot.classId, 'class')}</span>
                           </div>
                         </div>
                       ) : (
