@@ -37,13 +37,15 @@ export default function TimetableGenerator() {
       const practicalSubjects = subjects.filter(s => s.name.toUpperCase().startsWith('PRACTICAL'));
       
       const grid: (TimetableSlot | null)[][] = Array.from({ length: weekDays.length }, () => Array(periods.length * classes.length).fill(null));
-      
+
       const occupiedFacultySlots = new Set<string>();
       const dailyClassFaculty = new Map<string, Set<string>>();
+      const dailyFacultyPeriodCount = new Map<string, number>();
 
       for (let dayIndex = 0; dayIndex < weekDays.length; dayIndex++) {
         const day = weekDays[dayIndex];
         classes.forEach(cls => dailyClassFaculty.set(`${cls.id}-${day}`, new Set()));
+        faculty.forEach(f => dailyFacultyPeriodCount.set(`${f.id}-${day}`, 0));
 
         for (let periodIndex = 0; periodIndex < periods.length; periodIndex++) {
           const period = periods[periodIndex];
@@ -52,8 +54,12 @@ export default function TimetableGenerator() {
           for (let classIndex = 0; classIndex < classes.length; classIndex++) {
             const cls = classes[classIndex];
             const facultyTaughtToday = dailyClassFaculty.get(`${cls.id}-${day}`)!;
-            
-            let availableFaculty = faculty.filter(f => !occupiedFacultySlots.has(`${f.id}-${day}-${period.id}`) && !facultyTaughtToday.has(f.id)).sort(() => 0.5 - Math.random());
+
+            let availableFaculty = faculty.filter(f =>
+              !occupiedFacultySlots.has(`${f.id}-${day}-${period.id}`) &&
+              !facultyTaughtToday.has(f.id) &&
+              (dailyFacultyPeriodCount.get(`${f.id}-${day}`) || 0) < 3
+            ).sort(() => 0.5 - Math.random());
             let assignedSlot: TimetableSlot | null = null;
 
             for (const fac of availableFaculty) {
@@ -63,9 +69,13 @@ export default function TimetableGenerator() {
                     break;
                 }
             }
-            
+
             if (!assignedSlot) {
-                const repeatingFaculty = faculty.filter(f => !occupiedFacultySlots.has(`${f.id}-${day}-${period.id}`) && facultyTaughtToday.has(f.id)).sort(() => 0.5 - Math.random());
+                const repeatingFaculty = faculty.filter(f =>
+                  !occupiedFacultySlots.has(`${f.id}-${day}-${period.id}`) &&
+                  facultyTaughtToday.has(f.id) &&
+                  (dailyFacultyPeriodCount.get(`${f.id}-${day}`) || 0) < 3
+                ).sort(() => 0.5 - Math.random());
                 for (const fac of repeatingFaculty) {
                     const subjectsTaughtByFacultyToday = timetable.filter(s => s.day === day && s.classId === cls.id && s.facultyId === fac.id).map(s => s.subjectId);
                     const newSubjectId = fac.subjects.find(sId => !subjectsTaughtByFacultyToday.includes(sId));
@@ -77,7 +87,10 @@ export default function TimetableGenerator() {
             }
 
             if (!assignedSlot) {
-                const fallbackFaculty = faculty.filter(f => !occupiedFacultySlots.has(`${f.id}-${day}-${period.id}`)).sort(() => 0.5 - Math.random());
+                const fallbackFaculty = faculty.filter(f =>
+                  !occupiedFacultySlots.has(`${f.id}-${day}-${period.id}`) &&
+                  (dailyFacultyPeriodCount.get(`${f.id}-${day}`) || 0) < 3
+                ).sort(() => 0.5 - Math.random());
                 if (fallbackFaculty.length > 0) {
                     const fac = fallbackFaculty[0];
                     const subjectId = fac.subjects[0];
@@ -90,6 +103,8 @@ export default function TimetableGenerator() {
               grid[dayIndex][flatIndex] = assignedSlot;
               occupiedFacultySlots.add(`${assignedSlot.facultyId}-${day}-${period.id}`);
               facultyTaughtToday.add(assignedSlot.facultyId);
+              const currentCount = dailyFacultyPeriodCount.get(`${assignedSlot.facultyId}-${day}`) || 0;
+              dailyFacultyPeriodCount.set(`${assignedSlot.facultyId}-${day}`, currentCount + 1);
             }
           }
         }
